@@ -35,7 +35,9 @@ func (this *Config) ServeConfig(rw http.ResponseWriter, r *http.Request) {
 	}
 	owner := os.Getenv("OWNER")
 	repo := os.Getenv("REPO_NAME")
-	request, err := http.NewRequest(http.MethodGet, fmt.Sprintf("https://api.github.com/repos/%v/%v/contents/%v.yaml?ref=%v", owner, repo, path, branch), nil)
+	url := fmt.Sprintf("https://api.github.com/repos/%v/%v/contents/%v.yaml?ref=%v", owner, repo, path, branch)
+	fmt.Println(url)
+	request, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		this.l.Println(err)
 		rw.WriteHeader(http.StatusInternalServerError)
@@ -43,8 +45,9 @@ func (this *Config) ServeConfig(rw http.ResponseWriter, r *http.Request) {
 		return
 		//todo: Request failed. Handle it
 	}
+	basicAuthToken := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Basic %v:%v", owner, os.Getenv("AUTH_TOKEN"))))
 	request.Header.Set("Accept", "application/vnd.github+json")
-	//request.Header.Add("Authorization", fmt.Sprintf("Bearer %v", os.Getenv("AUTH_TOKEN")))
+	request.Header.Add("Authorization", fmt.Sprintf("Basic %v", basicAuthToken))
 	request.Header.Set("X-GitHub-Api-Version", settings.GitHubAPIVersion)
 
 	resp, err := client.Do(request)
@@ -54,14 +57,38 @@ func (this *Config) ServeConfig(rw http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(rw, "Server error")
 		return
 	}
+	if resp.StatusCode > 201 {
+		this.l.Println("Error")
+		rw.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintf(rw, "Server error")
+		return
+	}
 
 	var results map[string]interface{}
 
-	json.NewDecoder(resp.Body).Decode(&results)
+	err = json.NewDecoder(resp.Body).Decode(&results)
+	if err != nil {
+		this.l.Println(err)
+		rw.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintf(rw, err.Error())
+		return
+	}
 
 	str := results["content"].(string)
-	decText, _ := base64.StdEncoding.DecodeString(str)
+	decText, err := base64.StdEncoding.DecodeString(str)
+	if err != nil {
+		this.l.Println(err)
+		rw.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintf(rw, err.Error())
+		return
+	}
 	jsonData, err := yaml.YAMLToJSON(decText)
+	if err != nil {
+		this.l.Println(err)
+		rw.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintf(rw, err.Error())
+		return
+	}
 
 	rw.WriteHeader(http.StatusOK)
 	rw.Write([]byte(jsonData))
