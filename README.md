@@ -10,9 +10,7 @@ My attempt at builder a configuration management server in Golang
 | Variable Name | Description | 
 | --- | --- |
 | REPO_NAME | The name of your github repository created to store your env variables |
-| --- | --- |
 | OWNER | Your github username |
-| --- | --- |
 | AUTH_TOKEN | Personal access token used for GitHib Authentications |
 
 # Run
