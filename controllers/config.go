@@ -118,6 +118,7 @@ func (this *Config) ServeConfig(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	rw.Header().Add("Content-Type", "application/json")
 	rw.WriteHeader(http.StatusOK)
 	rw.Write([]byte(configResults))
 	return
