@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"reflect"
 	"time"
 
 	"github.com/config-server/settings"
@@ -90,8 +91,35 @@ func (this *Config) ServeConfig(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var source map[string]interface{}
+	err = json.Unmarshal(jsonData, &source)
+	if err != nil {
+		this.l.Println(err)
+		rw.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintf(rw, err.Error())
+		return
+	}
+	destination := make(map[string]interface{})
+	for k, v := range source {
+		if reflect.TypeOf(v) != reflect.TypeOf(map[string]interface{}{}) {
+			destination[k] = v
+			continue
+		}
+		for key, val := range v.(map[string]interface{}) {
+			destination[k+"."+key] = val
+		}
+	}
+
+	configResults, err := json.Marshal(destination)
+	if err != nil {
+		this.l.Println(err)
+		rw.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintf(rw, err.Error())
+		return
+	}
+
 	rw.WriteHeader(http.StatusOK)
-	rw.Write([]byte(jsonData))
+	rw.Write([]byte(configResults))
 	return
 
 }
