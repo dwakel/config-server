@@ -16,10 +16,11 @@ import (
 
 func main() {
 	godotenv.Load("./config.env")
-
 	logger := log.New(os.Stdout, "config server", log.LstdFlags)
+	owner, repo, auth := setConfigVars(*logger)
+
 	hb := controllers.NewHeartbeat(logger)
-	c := controllers.NewConfig(logger)
+	c := controllers.NewConfig(logger, owner, repo, auth)
 
 	sm := mux.NewRouter()
 	getRouter := sm.Methods(http.MethodGet).Subrouter()
@@ -52,4 +53,21 @@ func main() {
 	tc, _ := context.WithTimeout(context.Background(), 30*time.Second)
 	server.Shutdown(tc)
 
+}
+
+//todo: increase coverage of method to catch other invalid inputs like whitespaces, etc.
+func setConfigVars(l log.Logger) (string, string, string) {
+	owner := os.Getenv("OWNER")
+	if owner == "" {
+		l.Fatalln("Failed to start service, OWNER not provided")
+	}
+	repo := os.Getenv("REPO_NAME")
+	if repo == "" {
+		l.Fatalln("Failed to start service, REPO_NAME not provided")
+	}
+	auth := os.Getenv("AUTH_TOKEN")
+	if auth == "" {
+		l.Fatalln("Failed to start service, AUTH_TOKEN not Provided")
+	}
+	return owner, repo, auth
 }

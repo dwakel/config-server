@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"reflect"
 	"time"
 
@@ -16,28 +15,38 @@ import (
 )
 
 type Config struct {
-	l *log.Logger
+	l         *log.Logger
+	owner     string
+	repo      string
+	authToken string
 }
 
-func NewConfig(l *log.Logger) *Config {
-	return &Config{l}
+func NewConfig(l *log.Logger, owner, repo, authToken string) *Config {
+	return &Config{l, owner, repo, authToken}
 }
 
 func (this *Config) ServeConfig(rw http.ResponseWriter, r *http.Request) {
 	//handle request
 	vars := mux.Vars(r)
-
-	path, _ := vars["path"]
-	branch, _ := vars["branch"]
+	path, exist := vars["path"]
+	if !exist {
+		rw.WriteHeader(http.StatusNotFound)
+		fmt.Fprintf(rw, "Not Found")
+		return
+	}
+	branch, exist := vars["branch"]
+	if !exist {
+		rw.WriteHeader(http.StatusNotFound)
+		fmt.Fprintf(rw, "Not Found")
+		return
+	}
 
 	//Fetch data
 	client := http.Client{
-		Timeout: 15 * time.Second,
+		Timeout: 3 * time.Second,
 	}
-	owner := os.Getenv("OWNER")
-	repo := os.Getenv("REPO_NAME")
-	url := fmt.Sprintf("https://api.github.com/repos/%v/%v/contents/%v.yaml?ref=%v", owner, repo, path, branch)
-	fmt.Println(url)
+
+	url := fmt.Sprintf(settings.GitHubURL, this.owner, this.repo, path, branch)
 	request, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		this.l.Println(err)
@@ -46,27 +55,26 @@ func (this *Config) ServeConfig(rw http.ResponseWriter, r *http.Request) {
 		return
 		//todo: Request failed. Handle it
 	}
-	basicAuthToken := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Basic %v:%v", owner, os.Getenv("AUTH_TOKEN"))))
+	basicAuthToken := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("Basic %v:%v", this.owner, this.authToken)))
 	request.Header.Set("Accept", "application/vnd.github+json")
 	request.Header.Add("Authorization", fmt.Sprintf("Basic %v", basicAuthToken))
 	request.Header.Set("X-GitHub-Api-Version", settings.GitHubAPIVersion)
 
 	resp, err := client.Do(request)
 	if err != nil {
-		this.l.Println("Error")
+		this.l.Println(err)
 		rw.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprintf(rw, "Server error")
 		return
 	}
-	if resp.StatusCode > 201 {
-		this.l.Println("Error")
+	if resp.StatusCode > http.StatusOK {
+		this.l.Println("Request Failed")
 		rw.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprintf(rw, "Server error")
 		return
 	}
 
-	var results map[string]interface{}
-
+	var results map[string]any
 	err = json.NewDecoder(resp.Body).Decode(&results)
 	if err != nil {
 		this.l.Println(err)
@@ -75,6 +83,7 @@ func (this *Config) ServeConfig(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	//extracting github file from base64 string
 	str := results["content"].(string)
 	decText, err := base64.StdEncoding.DecodeString(str)
 	if err != nil {
@@ -83,6 +92,7 @@ func (this *Config) ServeConfig(rw http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(rw, err.Error())
 		return
 	}
+
 	jsonData, err := yaml.YAMLToJSON(decText)
 	if err != nil {
 		this.l.Println(err)
@@ -91,7 +101,7 @@ func (this *Config) ServeConfig(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var source map[string]interface{}
+	var source map[string]any
 	err = json.Unmarshal(jsonData, &source)
 	if err != nil {
 		this.l.Println(err)
@@ -99,18 +109,11 @@ func (this *Config) ServeConfig(rw http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(rw, err.Error())
 		return
 	}
-	destination := make(map[string]interface{})
-	for k, v := range source {
-		if reflect.TypeOf(v) != reflect.TypeOf(map[string]interface{}{}) {
-			destination[k] = v
-			continue
-		}
-		for key, val := range v.(map[string]interface{}) {
-			destination[k+"."+key] = val
-		}
-	}
 
-	configResults, err := json.Marshal(destination)
+	//Flattern out JSON
+	flatJson := flatternJson(source)
+
+	configResults, err := json.Marshal(flatJson)
 	if err != nil {
 		this.l.Println(err)
 		rw.WriteHeader(http.StatusInternalServerError)
@@ -123,4 +126,19 @@ func (this *Config) ServeConfig(rw http.ResponseWriter, r *http.Request) {
 	rw.Write([]byte(configResults))
 	return
 
+}
+
+func flatternJson(source map[string]any) map[string]any {
+	//todo: Find a more elegant way to do this
+	flatten := make(map[string]any)
+	for k, v := range source {
+		if reflect.TypeOf(v) != reflect.TypeOf(map[string]any{}) {
+			flatten[k] = v
+			continue
+		}
+		for key, val := range v.(map[string]any) {
+			flatten[k+"."+key] = val
+		}
+	}
+	return flatten
 }
