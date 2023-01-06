@@ -13,7 +13,7 @@ My attempt at builder a configuration management server in Golang
 | OWNER | Your github username |
 | AUTH_TOKEN | Personal access token used for GitHib Authentications |
 
-# Run
+# Run :running_man:
 - Run `go run main.go` to start server
 
 # Usage :rocket:
@@ -28,5 +28,5 @@ Configs will be served as JSON
 
 
 ## Stil a WIP :anchor:
-
+- Considering additional layers of authentication
 
